@@ -116,6 +116,21 @@ body {
     100% { transform: rotate(360deg); }
 }
 
+/* Map Container */
+.map-container {
+    margin-top: 20px;
+    width: 100%;
+    max-width: 400px;
+    height: 300px;
+    border: 1px solid white;
+    border-radius: 10px;
+    overflow: hidden;
+}
+
+iframe {
+    border: none;
+}
+
 /* Responsive Design */
 @media (max-width: 600px) {
     .searchBox {
@@ -124,5 +139,9 @@ body {
 
     .data {
         width: 90%;
+    }
+
+    .map-container {
+        height: 250px;
     }
 }

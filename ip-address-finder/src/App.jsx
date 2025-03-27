@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import './App.css';
 import axios from 'axios';
 import Location from './Location';
@@ -12,15 +12,28 @@ export default function App() {
   const [error, setError] = useState("");
   const [darkMode, setDarkMode] = useState(true);
 
-  const fetchAddress = async (e) => {
-    e.preventDefault();
-    if (!address) return;
+  // Fetch user's IP on page load
+  useEffect(() => {
+    const fetchUserIP = async () => {
+      setLoading(true);
+      try {
+        const response = await axios.get('https://api64.ipify.org?format=json');
+        fetchAddress(response.data.ip);
+      } catch {
+        setError("Failed to fetch user's IP!");
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchUserIP();
+  }, []);
 
+  const fetchAddress = async (ip) => {
     setLoading(true);
     setError("");
 
     try {
-      const response = await axios.get(`http://ip-api.com/json/${address}`);
+      const response = await axios.get(`http://ip-api.com/json/${ip}`);
       setIP(response.data);
       if (response.data.status === "fail") {
         setError("Address not found!");
@@ -43,7 +56,7 @@ export default function App() {
 
       <h1>IP Address Finder</h1>
       <div className='searchBar'>
-        <form onSubmit={fetchAddress}>
+        <form onSubmit={(e) => { e.preventDefault(); fetchAddress(address); }}>
           <input
             type='text'
             value={address}
