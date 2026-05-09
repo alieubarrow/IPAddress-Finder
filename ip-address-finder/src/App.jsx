@@ -13,27 +13,7 @@ import {
 } from '@fortawesome/free-solid-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 
-const IP_API_FIELDS = [
-  'status',
-  'message',
-  'query',
-  'country',
-  'countryCode',
-  'region',
-  'regionName',
-  'city',
-  'zip',
-  'lat',
-  'lon',
-  'timezone',
-  'isp',
-  'org',
-  'as',
-  'reverse',
-  'mobile',
-  'proxy',
-  'hosting',
-].join(',');
+const IP_LOOKUP_URL = '/api/lookup';
 
 const isValidIpAddress = (value) => {
   const ip = value.trim();
@@ -56,6 +36,26 @@ const isValidIpAddress = (value) => {
   }
 };
 
+const normalizeIpData = (data) => ({
+  query: data.ip || data.query,
+  country: data.country_name || data.country,
+  countryCode: data.country_code || data.countryCode,
+  region: data.region_code || data.region,
+  regionName: data.regionName || data.region,
+  city: data.city,
+  zip: data.postal,
+  lat: data.latitude ?? data.lat,
+  lon: data.longitude ?? data.lon,
+  timezone: typeof data.timezone === 'string' ? data.timezone : data.timezone?.id,
+  isp: data.org || data.connection?.isp,
+  org: data.org || data.connection?.org,
+  as: data.asn || data.as || (data.connection?.asn ? `AS${data.connection.asn}` : ''),
+  reverse: data.reverse || '',
+  mobile: data.connection?.type === 'mobile',
+  proxy: Boolean(data.proxy || data.security?.is_proxy || data.security?.is_vpn || data.security?.is_tor),
+  hosting: Boolean(data.hosting || data.security?.is_cloud_provider),
+});
+
 export default function App() {
   const [IP, setIP] = useState({});
   const [address, setAddress] = useState("");
@@ -67,7 +67,9 @@ export default function App() {
   });
   const [recentSearches, setRecentSearches] = useState(() => {
     try {
-      return JSON.parse(localStorage.getItem('ip-finder-history')) || [];
+      return (JSON.parse(localStorage.getItem('ip-finder-history')) || []).filter(
+        (item) => item?.query
+      );
     } catch {
       return [];
     }
@@ -113,18 +115,19 @@ export default function App() {
     setError("");
 
     try {
-      const response = await axios.get(
-        `http://ip-api.com/json/${nextAddress}?fields=${IP_API_FIELDS}`
-      );
+      const response = await axios.get(IP_LOOKUP_URL, {
+        params: { ip: nextAddress },
+      });
 
-      if (response.data.status === "fail") {
+      if (response.data.success === false || response.data.status === "fail") {
         setIP({});
         setError(response.data.message || "Address not found.");
         return;
       }
 
-      setIP(response.data);
-      addRecentSearch(response.data);
+      const result = normalizeIpData(response.data);
+      setIP(result);
+      addRecentSearch(result);
     } catch {
       setIP({});
       setError("Failed to fetch IP data. Please try again.");
@@ -238,7 +241,7 @@ export default function App() {
                 <button
                   type="button"
                   className="history-item"
-                  key={item.query}
+                  key={`${item.query}-${item.timestamp}`}
                   onClick={() => fetchAddress(item.query, { clearInput: true })}
                 >
                   <span>{item.query}</span>
