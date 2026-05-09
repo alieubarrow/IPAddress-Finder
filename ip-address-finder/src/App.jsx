@@ -1,79 +1,254 @@
-import { useState, useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import './App.css';
 import axios from 'axios';
 import Location from './Location';
-import { faMagnifyingGlass, faSun, faMoon } from '@fortawesome/free-solid-svg-icons';
+import {
+  faClockRotateLeft,
+  faLocationCrosshairs,
+  faMagnifyingGlass,
+  faMoon,
+  faRotateRight,
+  faSun,
+  faTrash,
+} from '@fortawesome/free-solid-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+
+const IP_API_FIELDS = [
+  'status',
+  'message',
+  'query',
+  'country',
+  'countryCode',
+  'region',
+  'regionName',
+  'city',
+  'zip',
+  'lat',
+  'lon',
+  'timezone',
+  'isp',
+  'org',
+  'as',
+  'reverse',
+  'mobile',
+  'proxy',
+  'hosting',
+].join(',');
+
+const isValidIpAddress = (value) => {
+  const ip = value.trim();
+  const ipv4 =
+    /^(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}$/;
+
+  if (ipv4.test(ip)) {
+    return true;
+  }
+
+  if (!ip.includes(':')) {
+    return false;
+  }
+
+  try {
+    new URL(`http://[${ip}]`);
+    return true;
+  } catch {
+    return false;
+  }
+};
 
 export default function App() {
   const [IP, setIP] = useState({});
   const [address, setAddress] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [darkMode, setDarkMode] = useState(true);
+  const [darkMode, setDarkMode] = useState(() => {
+    const storedTheme = localStorage.getItem('ip-finder-theme');
+    return storedTheme ? storedTheme === 'dark' : true;
+  });
+  const [recentSearches, setRecentSearches] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem('ip-finder-history')) || [];
+    } catch {
+      return [];
+    }
+  });
 
-  // Fetch user's IP on page load
   useEffect(() => {
-    const fetchUserIP = async () => {
-      setLoading(true);
-      try {
-        const response = await axios.get('https://api64.ipify.org?format=json');
-        fetchAddress(response.data.ip);
-      } catch {
-        setError("Failed to fetch user's IP!");
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchUserIP();
+    localStorage.setItem('ip-finder-theme', darkMode ? 'dark' : 'light');
+  }, [darkMode]);
+
+  useEffect(() => {
+    localStorage.setItem('ip-finder-history', JSON.stringify(recentSearches));
+  }, [recentSearches]);
+
+  const addRecentSearch = useCallback((result) => {
+    setRecentSearches((items) => {
+      const filtered = items.filter((item) => item.query !== result.query);
+      return [
+        {
+          query: result.query,
+          city: result.city,
+          country: result.country,
+          timestamp: new Date().toISOString(),
+        },
+        ...filtered,
+      ].slice(0, 5);
+    });
   }, []);
 
-  const fetchAddress = async (ip) => {
+  const fetchAddress = useCallback(async (ip, options = {}) => {
+    const nextAddress = ip.trim();
+
+    if (!nextAddress) {
+      setError("Enter an IP address or use the current IP button.");
+      return;
+    }
+
+    if (!isValidIpAddress(nextAddress)) {
+      setError("Enter a valid IPv4 or IPv6 address.");
+      return;
+    }
+
     setLoading(true);
     setError("");
 
     try {
-      const response = await axios.get(`http://ip-api.com/json/${ip}`);
-      setIP(response.data);
+      const response = await axios.get(
+        `http://ip-api.com/json/${nextAddress}?fields=${IP_API_FIELDS}`
+      );
+
       if (response.data.status === "fail") {
-        setError("Address not found!");
+        setIP({});
+        setError(response.data.message || "Address not found.");
+        return;
       }
+
+      setIP(response.data);
+      addRecentSearch(response.data);
     } catch {
-      setError("Failed to fetch data!");
+      setIP({});
+      setError("Failed to fetch IP data. Please try again.");
     } finally {
       setLoading(false);
-      setAddress("");
+      if (options.clearInput) {
+        setAddress("");
+      }
     }
-  };
+  }, [addRecentSearch]);
+
+  const fetchUserIP = useCallback(async () => {
+    setLoading(true);
+    setError("");
+
+    try {
+      const response = await axios.get('https://api64.ipify.org?format=json');
+      await fetchAddress(response.data.ip, { clearInput: true });
+    } catch {
+      setError("Failed to detect your current IP address.");
+    } finally {
+      setLoading(false);
+    }
+  }, [fetchAddress]);
+
+  // Fetch user's IP on page load
+  useEffect(() => {
+    fetchUserIP();
+  }, [fetchUserIP]);
 
   return (
     <div className={darkMode ? "app dark" : "app light"}>
-      <div className="toggle-container">
-        <button className="toggle-button" onClick={() => setDarkMode(!darkMode)}>
-          <FontAwesomeIcon icon={darkMode ? faSun : faMoon} /> {darkMode ? "Light Mode" : "Dark Mode"}
-        </button>
-      </div>
-
-      <h1>IP Address Finder</h1>
-      <div className='searchBar'>
-        <form onSubmit={(e) => { e.preventDefault(); fetchAddress(address); }}>
-          <input
-            type='text'
-            value={address}
-            onChange={(e) => setAddress(e.target.value)}
-            className='searchBox'
-            placeholder='Enter IP Address...'
-          />
-          <button type='submit' className='searchButton'>
-            <FontAwesomeIcon icon={faMagnifyingGlass} />
+      <main className="app-shell">
+        <header className="app-header">
+          <div>
+            <p className="eyebrow">Network lookup</p>
+            <h1>IP Address Finder</h1>
+          </div>
+          <button
+            className="icon-button"
+            onClick={() => setDarkMode(!darkMode)}
+            title={darkMode ? "Switch to light mode" : "Switch to dark mode"}
+            type="button"
+          >
+            <FontAwesomeIcon icon={darkMode ? faSun : faMoon} />
           </button>
-        </form>
-      </div>
+        </header>
 
-      {loading && <div className="spinner"></div>}
-      {error && <p className="error-message">{error}</p>}
+        <section className="lookup-panel" aria-label="IP lookup form">
+          <form
+            className="search-form"
+            onSubmit={(e) => {
+              e.preventDefault();
+              fetchAddress(address);
+            }}
+          >
+            <input
+              type="text"
+              value={address}
+              onChange={(e) => setAddress(e.target.value)}
+              className="search-box"
+              placeholder="Enter IPv4 or IPv6 address"
+              aria-label="IP address"
+            />
+            <button type="submit" className="primary-button" disabled={loading}>
+              <FontAwesomeIcon icon={faMagnifyingGlass} />
+              Search
+            </button>
+          </form>
 
-      <Location ipaddress={IP} />
+          <div className="quick-actions">
+            <button type="button" className="secondary-button" onClick={fetchUserIP} disabled={loading}>
+              <FontAwesomeIcon icon={faLocationCrosshairs} />
+              My IP
+            </button>
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={() => IP.query && fetchAddress(IP.query, { clearInput: true })}
+              disabled={loading || !IP.query}
+            >
+              <FontAwesomeIcon icon={faRotateRight} />
+              Refresh
+            </button>
+          </div>
+        </section>
+
+        {loading && <div className="spinner" aria-label="Loading"></div>}
+        {error && <p className="error-message">{error}</p>}
+
+        <Location ipaddress={IP} />
+
+        {recentSearches.length > 0 && (
+          <section className="history-panel" aria-label="Recent searches">
+            <div className="section-heading">
+              <h2>
+                <FontAwesomeIcon icon={faClockRotateLeft} />
+                Recent searches
+              </h2>
+              <button
+                type="button"
+                className="icon-button subtle"
+                onClick={() => setRecentSearches([])}
+                title="Clear recent searches"
+              >
+                <FontAwesomeIcon icon={faTrash} />
+              </button>
+            </div>
+            <div className="history-list">
+              {recentSearches.map((item) => (
+                <button
+                  type="button"
+                  className="history-item"
+                  key={item.query}
+                  onClick={() => fetchAddress(item.query, { clearInput: true })}
+                >
+                  <span>{item.query}</span>
+                  <small>{[item.city, item.country].filter(Boolean).join(', ') || 'Unknown location'}</small>
+                </button>
+              ))}
+            </div>
+          </section>
+        )}
+      </main>
     </div>
   );
 }
